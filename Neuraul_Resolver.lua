@@ -306,7 +306,7 @@ local function render_resolver_info()
     renderer.rectangle(x - 5, y - 5, 210, 110, 0, 0, 0, 200)
 
     -- Render title
-    renderer.text(x, y, 255, 255, 255, 255, "", 0, "Neural Resolver v2.1")
+    renderer.text(x, y, 255, 255, 255, 255, "", 0, "Neuraul Resolver v2.1")
 
     -- Render stats
     y = y + 20
@@ -371,7 +371,7 @@ local function resolve_player(player)
     -- Recognize Anti-Aim Patterns
     local pattern = recognize_pattern(data.angle_history)
     if pattern then
-        client.log("[Resolver] Pattern detected: " .. pattern)
+        client.log("[NeuralOnTop] Pattern detected: " .. pattern)
         
         -- If two consecutive misses, force a flip
         if data.missed_shots >= 2 then
@@ -460,12 +460,7 @@ local function initialize_neural_network()
     for i = 1, NN.hidden_layer do
         NN.biases.hidden[i] = math.random() * 0.1 - 0.05
     end
-    for i = 1, NN.output_layer do
-        NN.biases.output[i] = math.random() * 0.1 - 0.05
-    end
-end
 
--- Main Update Loop
 -- Main Update Loop
 local function on_update()
     if not ui.get(ui_elements.enable_resolver) then return end
@@ -541,7 +536,7 @@ local function reset_resolver_data()
     resolver_data = {}
     pattern_memory = {}
     exploit_history = {}
-    client.log("[Resolver] Data reset successfully!")
+    client.log("[NeuralOnTop] Data reset successfully!")
 end
 
 -- get_resolver_stats (Returns Resolver Performance Stats)
@@ -556,14 +551,14 @@ end
 -- force_update_resolver (Forces AI Learning Update)
 local function force_update_resolver()
     update_neural_network()
-    client.log("[Resolver] AI learning manually updated!")
+    client.log("[NeuralOnTop] AI learning manually updated!")
 end
 
 -- Return the resolver interface
 return {
     version = "2.1",
-    name = "P100 Advanced Neural Resolver",
+    name = "Neural The best Advanced Neural Resolver",
     reset = reset_resolver_data,
     get_stats = get_resolver_stats,
     force_update = force_update_resolver
-}
+    }
