@@ -92,6 +92,11 @@ local function update_neural_network()
     end
 end
 
+-- Leaky ReLU Activation Function
+local function leaky_relu(x)
+    return x > 0 and x or x * 0.01
+end
+
 -- 3. Layer Application Function
 local function apply_layer(input, weights, biases)
     if not input or not weights or not biases then return {} end
@@ -100,11 +105,9 @@ local function apply_layer(input, weights, biases)
     for i = 1, #weights do
         local sum = biases[i] or 0
         for j = 1, #input do
-            sum = sum + (input[j] * math.min(math.max(weights[j][i] or 0, -2), 2))  -- Prevent extreme values
+            sum = sum + (input[j] * math.min(math.max(weights[j][i] or 0, -2), 2))
         end
-        -- Improved sigmoid with overflow protection
-        local exp = math.exp(-math.min(math.max(sum, -20), 20))
-        output[i] = 1 / (1 + exp)
+        output[i] = leaky_relu(sum)
     end
     return output
 end
@@ -213,15 +216,7 @@ end
 
 -- 8. Active Resolutions Counter
 local function count_active_resolutions()
-    local resolution_modes = ui.get(ui_elements.resolution_mode)
-    if type(resolution_modes) ~= "string" then return 0 end
-
-    local count = 0
-    for _ in string.gmatch(resolution_modes, "([^,]+)") do
-        count = count + 1
-    end
-
-    return count
+    return #ui.get(ui_elements.resolution_mode)
 end
 
 -- 9. Exploit Handler Function
@@ -343,8 +338,6 @@ local function render_debug_info()
     renderer.text(x, y, 255, 255, 0, 255, "", 0, "🔧 Active Resolutions: " .. count_active_resolutions())
 end
 
-client.set_event_callback("paint", render_debug_info)
-
 -- Main Resolver Logic
 local function resolve_player(player)
     if not resolver_data[player] then
@@ -461,6 +454,12 @@ local function initialize_neural_network()
         NN.biases.hidden[i] = math.random() * 0.1 - 0.05
     end
 
+    for i = 1, NN.output_layer do
+        NN.biases.output[i] = math.random() * 0.1 - 0.05
+    end
+end
+
+
 -- Main Update Loop
 local function on_update()
     if not ui.get(ui_elements.enable_resolver) then return end
@@ -475,7 +474,7 @@ local function on_update()
     end
 
     -- AI Learning Update
-    if ui.get(ui_elements.enable_ai_learning) and globals.tickcount() % 64 == 0 then
+    if ui.get(ui_elements.enable_ai_learning) and globals.tickcount() % (get_prediction_accuracy() > 75 and 128 or 64) == 0 then
         update_neural_network()
     end
 
@@ -536,7 +535,7 @@ local function reset_resolver_data()
     resolver_data = {}
     pattern_memory = {}
     exploit_history = {}
-    client.log("[NeuralOnTop] Data reset successfully!")
+    client.log("[NeuraulonTop] Data reset successfully!")
 end
 
 -- get_resolver_stats (Returns Resolver Performance Stats)
@@ -551,14 +550,14 @@ end
 -- force_update_resolver (Forces AI Learning Update)
 local function force_update_resolver()
     update_neural_network()
-    client.log("[NeuralOnTop] AI learning manually updated!")
+    client.log("[NeuraulOnTop] AI learning manually updated!")
 end
 
 -- Return the resolver interface
 return {
     version = "2.1",
-    name = "Neural The best Advanced Neural Resolver",
+    name = "Neuraul the best Advanced Neural Resolver",
     reset = reset_resolver_data,
     get_stats = get_resolver_stats,
     force_update = force_update_resolver
-    }
+}
