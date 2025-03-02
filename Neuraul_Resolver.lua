@@ -25,6 +25,7 @@ local exploit_history = {}
 local last_prediction = {}
 local resolver_history = {}
 local backtrack_data = {}
+local choked_ticks = {}
 
 -- Enhanced UI Elements
 local ui_elements = {
@@ -414,8 +415,14 @@ local function resolve_backtrack(player)
     if stored.tick >= (globals.tickcount() - latency_ticks) then
         return stored.eye_angles
     end
-    
+
     return entity.get_prop(player, "m_angEyeAngles")
+end
+
+-- Fake Lag Detection
+local function detect_fake_lag(player)
+    local choked = entity.get_prop(player, "m_nChokedTicks")
+    return choked and choked > 5
 end
 
 -- Render Resolver Info
@@ -496,7 +503,6 @@ local function resolve_player(player)
     resolve_backtrack(player)
 end
 
--- Event Handlers
 -- Event Handlers
 local function on_bullet_impact(event)
     local player = client.userid_to_entindex(event.userid)
