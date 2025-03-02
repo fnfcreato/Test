@@ -4,7 +4,7 @@ local vector = require("vector")
 
 -- Neural Network Configuration
 local NN = {
-    input_layer = 10,
+    input_layer = 15,  -- Increased input size for better pattern recognition
     hidden_layer = 16,
     output_layer = 4,
     learning_rate = 0.01,
@@ -85,8 +85,8 @@ local function update_neural_network()
         for player, data in pairs(resolver_data) do
             if data.angle_history and #data.angle_history >= 5 then
                 local input_data = {}
-                for i = 1, 5 do
-                    input_data[i] = data.angle_history[#data.angle_history - 5 + i] or 0
+                for i = 1, 15 do
+                    input_data[i] = data.angle_history[#data.angle_history - 15 + i] or 0
                 end
                 local target = data.actual_angle or 0
                 pattern_recognition:train(input_data, target)
@@ -95,9 +95,52 @@ local function update_neural_network()
     end
 end
 
--- Leaky ReLU Activation Function
-local function leaky_relu(x)
-    return x > 0 and x or x * 0.01
+-- Backpropagation Function
+local function backpropagate(input, hidden, output, target)
+    -- Calculate output error
+    local output_error = {}
+    for i = 1, #output do
+        output_error[i] = target - output[i]
+    end
+
+    -- Calculate hidden error
+    local hidden_error = {}
+    for i = 1, #hidden do
+        hidden_error[i] = 0
+        for j = 1, #output do
+            hidden_error[i] = hidden_error[i] + (output_error[j] * NN.weights.output[i][j])
+        end
+    end
+
+    -- Update output weights
+    for i = 1, #hidden do
+        for j = 1, #output do
+            NN.weights.output[i][j] = NN.weights.output[i][j] + (NN.learning_rate * output_error[j] * hidden[i])
+        end
+    end
+
+    -- Update hidden weights
+    for i = 1, #input do
+        for j = 1, #hidden do
+            NN.weights.hidden[i][j] = NN.weights.hidden[i][j] + (NN.learning_rate * hidden_error[j] * input[i])
+        end
+    end
+end
+
+-- Softmax Activation Function
+local function softmax(x)
+    local sum = 0
+    local output = {}
+
+    for i = 1, #x do
+        sum = sum + math.exp(x[i])
+    end
+
+    for i = 1, #x do
+        output[i] = math.exp(x[i]) / sum
+    end
+
+    return output
 end
 
 -- 3. Layer Application Function
@@ -110,7 +153,7 @@ local function apply_layer(input, weights, biases)
         for j = 1, #input do
             sum = sum + (input[j] * math.min(math.max(weights[j][i] or 0, -2), 2))
         end
-        output[i] = leaky_relu(sum)
+        output[i] = softmax({sum})[1]
     end
     return output
 end
@@ -157,8 +200,8 @@ local function apply_resolution(player, angle)
     local current = entity.get_prop(player, "m_angEyeAngles[1]") or 0
     local smoothing_factor = math.max(0.1, 1 - (latency_adjustment / 30))
     local max_step = 30  -- Max degrees to adjust per update
-local angle_step = math.min(math.abs(angle - current), max_step)
-local smoothed_angle = current + math.sign(angle - current) * angle_step
+    local angle_step = math.min(math.abs(angle - current), max_step)
+    local smoothed_angle = current + math.sign(angle - current) * angle_step
     
     entity.set_prop(player, "m_angEyeAngles[1]", smoothed_angle)
     
@@ -169,7 +212,7 @@ end
 
 -- 6. Pattern Recognition Function
 local function recognize_pattern(angle_history)
-    if not angle_history or #angle_history < 5 then return nil end
+    if not angle_history or #angle_history < 15 then return nil end
     
     local patterns = {
         jitter = 0,
@@ -177,7 +220,7 @@ local function recognize_pattern(angle_history)
         static = 0
     }
     
-    -- Analyze last 5 angles
+    -- Analyze last 15 angles
     for i = 2, #angle_history do
         local diff = math.abs(angle_history[i] - angle_history[i-1])
         
@@ -281,12 +324,12 @@ local function predict_next_angle(player)
     if not data or not data.angle_history then return nil end
     
     -- Ensure sufficient history
-    if #data.angle_history < 5 then return nil end
+    if #data.angle_history < 15 then return nil end
     
     -- Prepare input data
     local input = {}
-    for i = 1, 5 do
-        input[i] = data.angle_history[#data.angle_history - 5 + i] or 0
+    for i = 1, 15 do
+        input[i] = data.angle_history[#data.angle_history - 15 + i] or 0
     end
     
     -- Apply neural network prediction
@@ -418,6 +461,22 @@ local function on_player_hurt(event)
             resolver_data[attacker].missed_shots = resolver_data[attacker].missed_shots + 1
         end
     end
+
+    -- Store enemy successful hit positions
+    if resolver_data[victim] then
+        table.insert(resolver_data[victim].hit_positions, {
+            hit_angle = resolver_data[victim].last_applied_angle,
+            time = globals.realtime()
+        })
+    end
+
+    -- Adjust angle towards enemy successful hit positions
+    if resolver_data[attacker] then
+        local last_hit_position = resolver_data[attacker].hit_positions[#resolver_data[attacker].hit_positions]
+        if last_hit_position and globals.realtime() - last_hit_position.time < 1 then
+            apply_resolution(attacker, last_hit_position.hit_angle + 10)
+        end
+    end
 end
 
 -- Movement Prediction
@@ -526,12 +585,12 @@ local function detect_exploits(player)
     -- Prevent false positives: Require 2+ detections
     if exploit_type then
         resolver_data[player].exploit_count = (resolver_data[player].exploit_count or 0) + 1
-            if resolver_data[player].exploit_count >= 2 then
-    -- Add cooldown to prevent instant toggling abuse
-    if resolver_data[player].last_exploit_time and globals.realtime() - resolver_data[player].last_exploit_time < 1 then
-        return nil  -- Ignore toggles within 1 second
-    end
-    resolver_data[player].last_exploit_time = globals.realtime()
+        if resolver_data[player].exploit_count >= 2 then
+            -- Add cooldown to prevent instant toggling abuse
+            if resolver_data[player].last_exploit_time and globals.realtime() - resolver_data[player].last_exploit_time < 1 then
+                return nil  -- Ignore toggles within 1 second
+            end
+            resolver_data[player].last_exploit_time = globals.realtime()
             return exploit_type
         end
     else
