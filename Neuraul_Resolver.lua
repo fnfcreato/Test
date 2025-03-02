@@ -56,6 +56,9 @@ local function get_prediction_accuracy()
     
     for _, data in pairs(resolver_data) do
         if data.predicted_angle and data.actual_angle then
+            if #data.angle_history < 5 then
+                return 100 -- Ignore new players from affecting accuracy
+            end
             total_predictions = total_predictions + 1
             -- Consider predictions within 5 degrees as correct
             if math.abs(data.predicted_angle - data.actual_angle) < 5 then
@@ -150,9 +153,10 @@ local function apply_resolution(player, angle)
     while angle > 180 do angle = angle - 360 end
     while angle < -180 do angle = angle + 360 end
     
-    -- Apply the angle with smoothing
+    -- Adaptive smoothing based on latency
     local current = entity.get_prop(player, "m_angEyeAngles[1]") or 0
-    local smoothed_angle = current + (angle - current) * 0.5
+    local smoothing_factor = math.max(0.1, 1 - (latency_adjustment / 30))
+    local smoothed_angle = current + (angle - current) * smoothing_factor
     
     entity.set_prop(player, "m_angEyeAngles[1]", smoothed_angle)
     
@@ -264,7 +268,8 @@ local function initialize_player_data(player)
         hit_history = {},
         exploit_history = {},
         prediction_accuracy = 100,
-        exploit_count = 0
+        exploit_count = 0,
+        last_exploit_time = 0
     }
 end
 
@@ -459,7 +464,6 @@ local function initialize_neural_network()
     end
 end
 
-
 -- Main Update Loop
 local function on_update()
     if not ui.get(ui_elements.enable_resolver) then return end
@@ -477,7 +481,7 @@ local function on_update()
     if ui.get(ui_elements.enable_ai_learning) and globals.tickcount() % (get_prediction_accuracy() > 75 and 128 or 64) == 0 then
         update_neural_network()
     end
-
+    
     -- Render UI (Only every 10 frames to save FPS)
     if globals.framecount() % 10 == 0 then
         render_resolver_info()
