@@ -156,7 +156,9 @@ local function apply_resolution(player, angle)
     -- Adaptive smoothing based on latency
     local current = entity.get_prop(player, "m_angEyeAngles[1]") or 0
     local smoothing_factor = math.max(0.1, 1 - (latency_adjustment / 30))
-    local smoothed_angle = current + (angle - current) * smoothing_factor
+    local max_step = 30  -- Max degrees to adjust per update
+local angle_step = math.min(math.abs(angle - current), max_step)
+local smoothed_angle = current + math.sign(angle - current) * angle_step
     
     entity.set_prop(player, "m_angEyeAngles[1]", smoothed_angle)
     
@@ -524,7 +526,12 @@ local function detect_exploits(player)
     -- Prevent false positives: Require 2+ detections
     if exploit_type then
         resolver_data[player].exploit_count = (resolver_data[player].exploit_count or 0) + 1
-        if resolver_data[player].exploit_count >= 2 then
+            if resolver_data[player].exploit_count >= 2 then
+    -- Add cooldown to prevent instant toggling abuse
+    if resolver_data[player].last_exploit_time and globals.realtime() - resolver_data[player].last_exploit_time < 1 then
+        return nil  -- Ignore toggles within 1 second
+    end
+    resolver_data[player].last_exploit_time = globals.realtime()
             return exploit_type
         end
     else
