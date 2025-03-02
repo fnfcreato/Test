@@ -23,6 +23,8 @@ local resolver_data = {}
 local pattern_memory = {}
 local exploit_history = {}
 local last_prediction = {}
+local resolver_history = {}
+local backtrack_data = {}
 
 -- Enhanced UI Elements
 local ui_elements = {
@@ -49,7 +51,7 @@ local ui_elements = {
     show_debug_info = ui.new_checkbox("LUA", "A", "🔍 Show Debug Info")
 }
 
--- 1. Prediction Accuracy Calculator
+-- Prediction Accuracy Calculator
 local function get_prediction_accuracy()
     local total_predictions = 0
     local correct_predictions = 0
@@ -60,7 +62,6 @@ local function get_prediction_accuracy()
                 return 100 -- Ignore new players from affecting accuracy
             end
             total_predictions = total_predictions + 1
-            -- Consider predictions within 5 degrees as correct
             if math.abs(data.predicted_angle - data.actual_angle) < 5 then
                 correct_predictions = correct_predictions + 1
             end
@@ -70,12 +71,10 @@ local function get_prediction_accuracy()
     return (correct_predictions / math.max(total_predictions, 1)) * 100
 end
 
--- 2. Neural Network Update Function
+-- Neural Network Update Function
 local function update_neural_network()
     local accuracy = get_prediction_accuracy()
-    
-    -- Only update if accuracy is good (Prevents overfitting)
-    if accuracy > 50 then  
+    if accuracy > 50 then
         if accuracy > 85 then
             NN.learning_rate = math.max(NN.learning_rate - 0.001, 0.001)
         else
@@ -97,13 +96,11 @@ end
 
 -- Backpropagation Function
 local function backpropagate(input, hidden, output, target)
-    -- Calculate output error
     local output_error = {}
     for i = 1, #output do
         output_error[i] = target - output[i]
     end
 
-    -- Calculate hidden error
     local hidden_error = {}
     for i = 1, #hidden do
         hidden_error[i] = 0
@@ -112,14 +109,12 @@ local function backpropagate(input, hidden, output, target)
         end
     end
 
-    -- Update output weights
     for i = 1, #hidden do
         for j = 1, #output do
             NN.weights.output[i][j] = NN.weights.output[i][j] + (NN.learning_rate * output_error[j] * hidden[i])
         end
     end
 
-    -- Update hidden weights
     for i = 1, #input do
         for j = 1, #hidden do
             NN.weights.hidden[i][j] = NN.weights.hidden[i][j] + (NN.learning_rate * hidden_error[j] * input[i])
@@ -143,7 +138,7 @@ local function softmax(x)
     return output
 end
 
--- 3. Layer Application Function
+-- Layer Application Function
 local function apply_layer(input, weights, biases)
     if not input or not weights or not biases then return {} end
     
@@ -158,7 +153,7 @@ local function apply_layer(input, weights, biases)
     return output
 end
 
--- 4. Angle Evaluation Function
+-- Angle Evaluation Function
 local function evaluate_angle(player, angle)
     local data = resolver_data[player]
     if not data then return 0 end
@@ -167,14 +162,9 @@ local function evaluate_angle(player, angle)
     local last_real_angle = data.last_real_angle or 0
     local hit_history = data.hit_history or {}
     
-    -- Calculate base score
     local base_score = 100 - (missed_shots * 10)
-    
-    -- Adjust score based on angle difference
     local angle_diff = math.abs(angle - last_real_angle)
     local angle_penalty = angle_diff * 0.5
-    
-    -- Consider hit history
     local history_bonus = 0
     for _, hit in ipairs(hit_history) do
         if math.abs(hit.angle - angle) < 10 then
@@ -185,45 +175,36 @@ local function evaluate_angle(player, angle)
     return math.max(0, base_score - angle_penalty + history_bonus)
 end
 
--- 5. Resolution Application Function
+-- Resolution Application Function
 local function apply_resolution(player, angle)
     if not player or not angle then return end
 
     local latency_adjustment = get_latency_adjustment(player)
-    angle = angle + latency_adjustment  -- Adjust angle based on latency
+    angle = angle + latency_adjustment
     
-    -- Ensure angle is within valid range (-180 to 180)
     while angle > 180 do angle = angle - 360 end
     while angle < -180 do angle = angle + 360 end
     
-    -- Adaptive smoothing based on latency
     local current = entity.get_prop(player, "m_angEyeAngles[1]") or 0
     local smoothing_factor = math.max(0.1, 1 - (latency_adjustment / 30))
-    local max_step = 30  -- Max degrees to adjust per update
+    local max_step = 30
     local angle_step = math.min(math.abs(angle - current), max_step)
     local smoothed_angle = current + math.sign(angle - current) * angle_step
     
     entity.set_prop(player, "m_angEyeAngles[1]", smoothed_angle)
     
-    -- Store resolution data
     if not resolver_data[player] then resolver_data[player] = {} end
     resolver_data[player].last_applied_angle = smoothed_angle
 end
 
--- 6. Pattern Recognition Function
+-- Pattern Recognition Function
 local function recognize_pattern(angle_history)
     if not angle_history or #angle_history < 15 then return nil end
     
-    local patterns = {
-        jitter = 0,
-        switch = 0,
-        static = 0
-    }
+    local patterns = { jitter = 0, switch = 0, static = 0 }
     
-    -- Analyze last 15 angles
     for i = 2, #angle_history do
         local diff = math.abs(angle_history[i] - angle_history[i-1])
-        
         if diff > 45 then
             patterns.jitter = patterns.jitter + 1
         elseif diff > 15 then
@@ -233,7 +214,6 @@ local function recognize_pattern(angle_history)
         end
     end
     
-    -- Determine pattern type
     if patterns.jitter >= 3 then return "Jitter AA"
     elseif patterns.switch >= 3 then return "Switch AA"
     elseif patterns.static >= 4 then return "Static AA"
@@ -242,42 +222,37 @@ local function recognize_pattern(angle_history)
     return nil
 end
 
--- 7. Movement-based Resolution Adjustment
+-- Movement-based Resolution Adjustment
 local function adjust_resolution_for_movement(player, predicted_pos)
     if not player or not predicted_pos then return end
     
     local current_pos = vector(entity.get_prop(player, "m_vecOrigin"))
     local velocity = vector(entity.get_prop(player, "m_vecVelocity"))
-    
-    -- Calculate movement delta
     local distance = (predicted_pos - current_pos):length()
     local speed = velocity:length()
     
-    -- Adjust resolution based on movement
-    if speed > 250 then -- Running
+    if speed > 250 then
         apply_resolution(player, resolver_data[player].last_real_angle + 15)
-    elseif speed > 130 then -- Walking
+    elseif speed > 130 then
         apply_resolution(player, resolver_data[player].last_real_angle - 10)
-    elseif distance < 5 then -- Nearly static
+    elseif distance < 5 then
         apply_resolution(player, resolver_data[player].last_real_angle)
     end
 end
 
--- 8. Active Resolutions Counter
+-- Active Resolutions Counter
 local function count_active_resolutions()
     return #ui.get(ui_elements.resolution_mode)
 end
 
--- 9. Exploit Handler Function
+-- Exploit Handler Function
 local function handle_exploit(player, exploit_type)
     if not player or not exploit_type then return end
     
     local data = resolver_data[player]
     if not data then return end
     
-    -- Handle different exploit types
     if exploit_type == "doubletap" then
-        -- Apply aggressive angle prediction for DT
         local prediction = data.last_real_angle + 35
         apply_resolution(player, prediction)
         data.exploit_history = data.exploit_history or {}
@@ -287,7 +262,6 @@ local function handle_exploit(player, exploit_type)
             angle = prediction
         })
     elseif exploit_type == "hideshot" then
-        -- More conservative prediction for hideshots
         local prediction = data.last_real_angle - 25
         apply_resolution(player, prediction)
         data.exploit_history = data.exploit_history or {}
@@ -298,13 +272,12 @@ local function handle_exploit(player, exploit_type)
         })
     end
     
-    -- Cleanup old history
     if data.exploit_history and #data.exploit_history > 10 then
         table.remove(data.exploit_history, 1)
     end
 end
 
--- Initialize the resolver data for a new player
+-- Initialize Resolver Data for a New Player
 local function initialize_player_data(player)
     resolver_data[player] = {
         angle_history = {},
@@ -318,42 +291,142 @@ local function initialize_player_data(player)
     }
 end
 
--- Enhanced predict_next_angle with safety checks
+-- Enhanced Predict Next Angle with Safety Checks
 local function predict_next_angle(player)
     local data = resolver_data[player]
     if not data or not data.angle_history then return nil end
     
-    -- Ensure sufficient history
     if #data.angle_history < 15 then return nil end
     
-    -- Prepare input data
     local input = {}
     for i = 1, 15 do
         input[i] = data.angle_history[#data.angle_history - 15 + i] or 0
     end
     
-    -- Apply neural network prediction
     local hidden = apply_layer(input, NN.weights.hidden, NN.biases.hidden)
     if not hidden or #hidden == 0 then return nil end
     
     local output = apply_layer(hidden, NN.weights.output, NN.biases.output)
     if not output or #output == 0 then return nil end
     
-    return (output[1] * 360) - 180  -- Corrected math
+    return (output[1] * 360) - 180
 end
 
+-- Anti-Aim Detection & Prediction
+local function detect_desync(player)
+    local eye_angles = entity.get_prop(player, "m_angEyeAngles")
+    local body_yaw = entity.get_prop(player, "m_flPoseParameter")
+    return math.abs(eye_angles - body_yaw)
+end
+
+local function resolve_enemy(player)
+    local angle = entity.get_prop(player, "m_angEyeAngles")
+    local desync = detect_desync(player)
+
+    if desync > 30 then
+        if resolver_history[player] then
+            return resolver_history[player]
+        else
+            return angle + (math.random(1, 2) == 1 and 58 or -58)
+        end
+    end
+
+    return angle
+end
+
+-- Unbeatable Brute-Force Resolver (Smart Brute)
+local possible_angles = {-60, -30, 0, 30, 60}
+local last_miss = {}
+
+local function resolve_bruteforce(player)
+    for _, angle in ipairs(possible_angles) do
+        if not last_miss[player] or last_miss[player] ~= angle then
+            if check_hit(angle) then
+                return angle
+            end
+        end
+    end
+
+    return 0
+end
+
+-- Prediction-Based Resolver (Memory + Backtrack Combo)
+local enemy_angles = {}
+
+local function resolve_memory(player)
+    local angle = entity.get_prop(player, "m_angEyeAngles")
+
+    if enemy_angles[player] then
+        local predicted = (enemy_angles[player] + angle) / 2
+        return predicted
+    else
+        enemy_angles[player] = angle
+    end
+
+    return angle
+end
+
+-- Exploit-Based Resolver (Edge Resolver)
+local function resolve_edge(player)
+    local is_on_edge = entity.get_prop(player, "m_vecOrigin") + 10
+
+    if is_on_edge then
+        return entity.get_prop(player, "m_angEyeAngles") + 180
+    end
+
+    return entity.get_prop(player, "m_angEyeAngles")
+end
+
+-- Dynamic Hitbox Adjustments
+local hitboxes = { "head", "chest", "pelvis" }
+
+local function get_best_hitbox(player)
+    for _, hitbox in ipairs(hitboxes) do
+        if is_visible(player, hitbox) then
+            return hitbox
+        end
+    end
+
+    return "head"
+end
+
+-- Powerful Backtrack Resolver
+local function store_backtrack(player)
+    if not entity.is_alive(player) then return end
+
+    local tick = globals.tickcount()
+    local eye_angles = entity.get_prop(player, "m_angEyeAngles")
+    local position = entity.get_prop(player, "m_vecOrigin")
+
+    backtrack_data[player] = {
+        tick = tick,
+        eye_angles = eye_angles,
+        position = position
+    }
+end
+
+local function resolve_backtrack(player)
+    if not backtrack_data[player] then return end
+
+    local stored = backtrack_data[player]
+    local latency_ticks = client.latency() / globals.tickinterval()
+
+    if stored.tick >= (globals.tickcount() - latency_ticks) then
+        return stored.eye_angles
+    end
+    
+    return entity.get_prop(player, "m_angEyeAngles")
+end
+
+-- Render Resolver Info
 local function render_resolver_info()
     if not ui.get(ui_elements.show_resolver_info) then return end
 
     local x, y = 100, 100 + ui.get(ui_elements.info_position)
 
-    -- Render background
     renderer.rectangle(x - 5, y - 5, 210, 110, 0, 0, 0, 200)
-
-    -- Render title
     renderer.text(x, y, 255, 255, 255, 255, "", 0, "Neuraul Resolver v2.1")
 
-    -- Render stats
     y = y + 20
     renderer.text(x, y, 0, 255, 0, 255, "", 0, "Active Resolutions: " .. count_active_resolutions())
     y = y + 15
@@ -370,20 +443,16 @@ local function render_debug_info()
     renderer.rectangle(x - 5, y - 5, 300, 150, 0, 0, 0, 200)
     renderer.text(x, y, 255, 255, 255, 255, "", 0, "🔍 Resolver Debug Info")
 
-    -- Show last prediction angle
     y = y + 20
     renderer.text(x, y, 0, 255, 255, 255, "", 0, "📌 Last Prediction: " .. string.format("%.1f°", last_prediction[entity.get_local_player()] or 0))
 
-    -- Show detected exploit
     y = y + 15
     local exploit = detect_exploits(entity.get_local_player())
     renderer.text(x, y, 255, 0, 0, 255, "", 0, "⚡ Exploit Detected: " .. (exploit or "None"))
 
-    -- Show total AI accuracy
     y = y + 15
     renderer.text(x, y, 0, 255, 0, 255, "", 0, "📊 AI Accuracy: " .. string.format("%.1f%%", get_prediction_accuracy()))
 
-    -- Show active resolution methods
     y = y + 15
     renderer.text(x, y, 255, 255, 0, 255, "", 0, "🔧 Active Resolutions: " .. count_active_resolutions())
 end
@@ -396,7 +465,6 @@ local function resolve_player(player)
 
     local data = resolver_data[player]
 
-    -- Predict Next Angle using AI
     local predicted_angle = predict_next_angle(player)
     if predicted_angle then
         local confidence = evaluate_angle(player, predicted_angle)
@@ -405,18 +473,15 @@ local function resolve_player(player)
         end
     end
 
-    -- Detect Exploits and Handle
     local exploit = detect_exploits(player)
     if exploit then
         handle_exploit(player, exploit)
     end
 
-    -- Recognize Anti-Aim Patterns
     local pattern = recognize_pattern(data.angle_history)
     if pattern then
         client.log("[NeuralOnTop] Pattern detected: " .. pattern)
         
-        -- If two consecutive misses, force a flip
         if data.missed_shots >= 2 then
             apply_resolution(player, data.last_real_angle + 35)
         else
@@ -424,11 +489,14 @@ local function resolve_player(player)
         end
     end
 
-    -- Adjust based on movement
     local predicted_pos = predict_movement(player)
     adjust_resolution_for_movement(player, predicted_pos)
+
+    store_backtrack(player)
+    resolve_backtrack(player)
 end
 
+-- Event Handlers
 -- Event Handlers
 local function on_bullet_impact(event)
     local player = client.userid_to_entindex(event.userid)
