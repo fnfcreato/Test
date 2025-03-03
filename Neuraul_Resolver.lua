@@ -627,10 +627,10 @@ local function on_update()
 end
 
 -- Register Event Callbacks
+client.set_event_callback("shutdown", save_ai_data)
 client.set_event_callback("paint", on_update)
 client.set_event_callback("player_hurt", on_player_hurt)
 client.set_event_callback("bullet_impact", on_bullet_impact)
-client.set_event_callback("shutdown", save_ai_data)
 client.set_event_callback("paint", load_ai_data)
 
 -- Initialize the resolver
@@ -705,3 +705,4 @@ return {
     get_stats = get_resolver_stats,
     force_update = force_update_resolver
 }
+
